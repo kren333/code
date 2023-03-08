@@ -11,6 +11,10 @@
 #include<tuple>
 using namespace std;
 
+/* MOVES */
+// saves the next x moves TODO: update datatype and make it a vector
+int paths[10000];
+
 /* Input Arguments */
 #define	MAP_IN                  prhs[0]
 #define	ROBOT_IN                prhs[1]
@@ -56,27 +60,71 @@ static void planner(
     int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1};
     int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1};
 
-    /* MY HIGH LEVEL PLAN
-    - create priority OPEN queue
-    - create CLOSED set
-    - create node class
-    QUESTIONS
-    - how do we deal with a moving target??? 
-    like how are we going to take into account the fact that the target moves when implementing A*?
+    // if empty then compute the plan
+    // else just return the next point in the vector and pop the element
+
+    /* NODE CLASS: describes one node in the 8-connected grid */
+    class Node {
+        
+        tuple<int, int> coords; // x, y coords of the node; used for identification of the node
+        double g; // g(x); what's the shortest dist to this point computed thus far?
+        double h; // h(x); how far from the goal do we think this will be?
+        Node nbors[NUMOFDIRS]; // the set of neighbors that will be put into OPEN; ith entry represents moving dX[i] and dY[i]
+        // note about nbors: LENGTH MUST BE 8 IN THIS IMPLEMENTATION (verify with asserts below)
+        
+        public:
+            // declaration and get functions to access node properties
+            // TODO: delete nbors? calculate the nbors as you go along rather than getting the entire graph befor eyous tart
+            Node (tuple <int, int> coords, double g, double h, Node nbors[NUMOFDIRS]) {
+                this->coords = coords;
+                this->g = g;
+                this->h = h;
+                this->nbors = nbors;
+            }
+
+            /* GET FUNCTIONS */
+
+            double getG () const {return g;}
+            double getH () const {return h;}
+            double getF () const {return g + h;}
+            double getCoords () const {return coords;}
+            double getNbors () const {return nbors;}
+
+            /* UTILITY FUNCTIONS */
+    };
+
+    /* helper class to compare two nodes based on their estimated distance to the goal */ 
+    class compareFx {
+        public:
+            bool compareHx (const Node& a, const Node& b) {
+                return a.getF() > b.getF();
+            }
+    };
+
+    // priority queue, sorted desc by heuristic, of nodes to traverse
+    priority_queue <Node, vector<Node>, compareFx > OPEN;
+    // set of previously opened nodes
+    set<Node>CLOSED;
+
+    // TODO: give the nodes its heuristic values,
+    // add the starting point to the queue, 
+    // open its neighbors, 
+    // then move it to closed, 
+    // update all the queue/set information with regards to g(x) and h(x)
+
+    // QUESTIONS
+    /*
+    - how does the heuristic work when you have a moving target? 
+    - what would i want to find the euclidean distance to?
+    - how does the planning function work when run? does it run once every x ms? does it run a single time at the start of the program? 
+    - do i need to plan out the entire path in the call below or just a single step?
+    - also basic syntax question: is it OK to specify length of arr must be NUMOFDIRS in the init function?
+    - am i supposed to insert the current node (with coords <robotposeX, robotposeY>) into OPEN and go from there?
     */
 
-    // node class
-    class node {
-        public:
-            tuple<int, int> coords; // x, y coords of the node; used for identification of the node
-            int g; // g(x); what's the shortest dist to this point computed thus far?
-            int h; // h(x); how far from the goal do we think this will be?
-            node nbors[8]; // the set of neighbors that will be put into OPEN
-    };
-    // priority queue, sorted desc by heuristic, of nodes to traverse
-    priority_queue <node, vector<node>, greater<double> > OPEN;
-    // set of previously opened nodes
-    set<node>CLOSED;
+   /* ANSWERS
+   - starting heuristic would be euclidean distance to the last location
+   */
 
     int goalposeX = (int) target_traj[target_steps-1];
     int goalposeY = (int) target_traj[target_steps-1+target_steps];
