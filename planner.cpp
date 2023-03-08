@@ -12,8 +12,12 @@
 using namespace std;
 
 /* MOVES */
-// saves the next x moves TODO: update datatype and make it a vector
-int paths[10000];
+// saves an indefinite number of moves 
+// we will call each move the x, y coordinate pair that the bot should move to next
+// the back (e.g. nth entry) of the vector will represent the next move, with the front representing coords at the final point
+typedef vector< tuple<int, int> > moveVector;
+moveVector moves;
+
 
 /* Input Arguments */
 #define	MAP_IN                  prhs[0]
@@ -122,9 +126,29 @@ static void planner(
     - am i supposed to insert the current node (with coords <robotposeX, robotposeY>) into OPEN and go from there?
     */
 
-   /* ANSWERS
-   - starting heuristic would be euclidean distance to the last location
-   */
+    /* ANSWERS
+    - starting heuristic would be euclidean distance to the last location (a bit naive but good enough for now)
+    - the planning function runs in 'ticks' in parallel with the movement of both bots
+    - plan out the entire path beforehand; a lot at the start and then you just move ur bot based off global var
+    */
+
+    // if we have not yet put in all of the moves, insert start into the queue and update the moves
+    if moves.empty() {
+        // TODO: use push front to incrementally insert the newest move at the front of the vector of moves
+        // basically here is where we run A* to populate moves :)
+    }
+    // otherwise, just return the next move and pop
+    else {
+        int n = moves.size();
+        tuple<int, int> nextMove = moves[n-1];
+        // update coords and remove from moves vector
+        action_ptr[0] = get<0>(nextMove);
+        action_ptr[1] = get<1>(nextMove);
+        moves.pop_back();
+        return;
+    }
+
+    /* OUTDATED CODE BELOW: GREEDY/NAIVE SOLUTION */
 
     int goalposeX = (int) target_traj[target_steps-1];
     int goalposeY = (int) target_traj[target_steps-1+target_steps];

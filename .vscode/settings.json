@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "functional": "cpp",
-        "queue": "cpp"
+        "queue": "cpp",
+        "tuple": "cpp"
     }
 }
