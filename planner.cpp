@@ -11,14 +11,6 @@
 #include<tuple>
 using namespace std;
 
-/* MOVES */
-// saves an indefinite number of moves 
-// we will call each move the x, y coordinate pair that the bot should move to next
-// the back (e.g. nth entry) of the vector will represent the next move, with the front representing coords at the final point
-typedef vector< tuple<int, int> > moveVector;
-moveVector moves;
-
-
 /* Input Arguments */
 #define	MAP_IN                  prhs[0]
 #define	ROBOT_IN                prhs[1]
@@ -45,6 +37,13 @@ moveVector moves;
 
 #define NUMOFDIRS 8
 
+/* MOVES */
+// saves an indefinite number of moves 
+// we will call each move the x, y coordinate pair that the bot should move to next
+// the back (e.g. nth entry) of the vector will represent the next move, with the front representing coords at the final point
+typedef vector< tuple<int, int> > moveVector;
+moveVector moves;
+
 static void planner(
         double*	map,
         int collision_thresh,
@@ -64,26 +63,30 @@ static void planner(
     int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1};
     int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1};
 
+    int goalposeX = (int) target_traj[target_steps-1];
+    int goalposeY = (int) target_traj[target_steps-1+target_steps];
+    // printf("robot: %d %d;\n", robotposeX, robotposeY);
+    // printf("goal: %d %d;\n", goalposeX, goalposeY);
+
     // if empty then compute the plan
     // else just return the next point in the vector and pop the element
 
     /* NODE CLASS: describes one node in the 8-connected grid */
     class Node {
         
-        tuple<int, int> coords; // x, y coords of the node; used for identification of the node
+        int x;
+        int y; // x, y coords of the node; used for identification of the node
         double g; // g(x); what's the shortest dist to this point computed thus far?
         double h; // h(x); how far from the goal do we think this will be?
-        Node nbors[NUMOFDIRS]; // the set of neighbors that will be put into OPEN; ith entry represents moving dX[i] and dY[i]
-        // note about nbors: LENGTH MUST BE 8 IN THIS IMPLEMENTATION (verify with asserts below)
+        Node* parent; // which node did we come from to get here?
         
         public:
             // declaration and get functions to access node properties
-            // TODO: delete nbors? calculate the nbors as you go along rather than getting the entire graph befor eyous tart
-            Node (tuple <int, int> coords, double g, double h, Node nbors[NUMOFDIRS]) {
-                this->coords = coords;
+            Node (int x, int y, double g, double h) {
+                this->x = x;
+                this->y = y;
                 this->g = g;
                 this->h = h;
-                this->nbors = nbors;
             }
 
             /* GET FUNCTIONS */
@@ -91,24 +94,29 @@ static void planner(
             double getG () const {return g;}
             double getH () const {return h;}
             double getF () const {return g + h;}
-            double getCoords () const {return coords;}
-            double getNbors () const {return nbors;}
+            int getX () const {return x;}
+            int getY () const {return y;}
 
             /* UTILITY FUNCTIONS */
-    };
 
-    /* helper class to compare two nodes based on their estimated distance to the goal */ 
-    class compareFx {
-        public:
-            bool compareHx (const Node& a, const Node& b) {
-                return a.getF() > b.getF();
+            bool cmpNode (Node a, Node b) {
+                return a.x == b.x && a.y == b.y;
             }
     };
 
+    /* helper class to compare two nodes based on their estimated distance to the goal */ 
+    struct compareFx {
+        bool operator () (const Node& a, const Node& b) {
+            return a.getF() > b.getF();
+        }
+    };
+
     // priority queue, sorted desc by heuristic, of nodes to traverse
+    // TODO: MAKE NODE *s
     priority_queue <Node, vector<Node>, compareFx > OPEN;
-    // set of previously opened nodes
-    set<Node>CLOSED;
+    // set of coords previously opened nodes
+    // TODO: CHANGE BACK TO NODE *S (special compare nodes)
+    set< tuple<int, int>>CLOSED;
 
     // TODO: give the nodes its heuristic values,
     // add the starting point to the queue, 
@@ -126,6 +134,10 @@ static void planner(
     - am i supposed to insert the current node (with coords <robotposeX, robotposeY>) into OPEN and go from there?
     */
 
+   /*
+    - how do we use A* to actively return a path? it seems that the slides version just gets a bunch of values assigned to each node
+   */
+
     /* ANSWERS
     - starting heuristic would be euclidean distance to the last location (a bit naive but good enough for now)
     - the planning function runs in 'ticks' in parallel with the movement of both bots
@@ -133,27 +145,60 @@ static void planner(
     */
 
     // if we have not yet put in all of the moves, insert start into the queue and update the moves
-    if moves.empty() {
+    if (moves.empty()) {
         // TODO: use push front to incrementally insert the newest move at the front of the vector of moves
         // basically here is where we run A* to populate moves :)
+        // insert start into OPEN
+        double init_h = (double)sqrt(((robotposeX-goalposeX)*(robotposeX-goalposeX) + (robotposeY-goalposeY)*(robotposeY-goalposeY)));
+        Node* start = new Node (robotposeX, robotposeY, 0, init_h);
+        tuple<int, int> final_coords = make_tuple(goalposeX, goalposeY);
+        OPEN.push(*start);
+        // while (you haven't opened the final position and OPEN is not empty):
+        while (!OPEN.empty() && CLOSED.find(final_coords) != CLOSED.end()) {
+            // pop from OPEN; insert coords into CLOSED
+            // TODO: change to *
+            Node next_to_search = OPEN.top();
+            // TODO: if the node is at the end then break
+            OPEN.pop();
+            CLOSED.insert(make_tuple(next_to_search.getX(), next_to_search.getY()));
+            // TODO: search all neighbors, update g values, and insert them into OPEN
+            for (int dir = 0; dir < NUMOFDIRS; dir++)
+            {
+                int newx = robotposeX + dX[dir];
+                int newy = robotposeY + dY[dir];
+                // do math if in-bounds
+                if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size) {
+                    // also if not in closed
+                    if (CLOSED.find(make_tuple(newx, newy)) == CLOSED.end()) {
+                        //if g(s') > g(s) + c(s,s')
+                        //g(s') = g(s) + c(s,s');
+                        // insert s' into OPEN;
+                        double new_g = next_to_search.getG();
+                        double new_dist = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
+                        Node * s_prime = new Node(newx, newy, new_g + 1, new_dist);
+                        OPEN.push(*s_prime);
+                    }
+                }
+                // TODO: use this algo to actually return a path
+                // eg populate moves
+                // using backtracking
+            }   
+        }
     }
     // otherwise, just return the next move and pop
     else {
         int n = moves.size();
         tuple<int, int> nextMove = moves[n-1];
         // update coords and remove from moves vector
-        action_ptr[0] = get<0>(nextMove);
-        action_ptr[1] = get<1>(nextMove);
+        robotposeX = robotposeX + get<0>(nextMove);
+        robotposeX = robotposeY + get<1>(nextMove);
+        action_ptr[0] = robotposeX;
+        action_ptr[1] = robotposeY;
         moves.pop_back();
         return;
     }
 
     /* OUTDATED CODE BELOW: GREEDY/NAIVE SOLUTION */
-
-    int goalposeX = (int) target_traj[target_steps-1];
-    int goalposeY = (int) target_traj[target_steps-1+target_steps];
-    // printf("robot: %d %d;\n", robotposeX, robotposeY);
-    // printf("goal: %d %d;\n", goalposeX, goalposeY);
 
     int bestX = 0, bestY = 0; // robot will not move if greedy action leads to collision
     double olddisttotarget = (double)sqrt(((robotposeX-goalposeX)*(robotposeX-goalposeX) + (robotposeY-goalposeY)*(robotposeY-goalposeY)));
@@ -177,6 +222,7 @@ static void planner(
             }
         }
     }
+
     robotposeX = robotposeX + bestX;
     robotposeY = robotposeY + bestY;
     action_ptr[0] = robotposeX;
