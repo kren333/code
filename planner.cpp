@@ -82,11 +82,12 @@ static void planner(
         
         public:
             // declaration and get functions to access node properties
-            Node (int x, int y, double g, double h) {
+            Node (int x, int y, double g, double h, Node* parent) {
                 this->x = x;
                 this->y = y;
                 this->g = g;
                 this->h = h;
+                this->parent = parent;
             }
 
             /* GET FUNCTIONS */
@@ -96,6 +97,7 @@ static void planner(
             double getF () const {return g + h;}
             int getX () const {return x;}
             int getY () const {return y;}
+            Node* getParent() const {return parent;}
 
             /* UTILITY FUNCTIONS */
 
@@ -104,19 +106,26 @@ static void planner(
             }
     };
 
-    /* helper class to compare two nodes based on their estimated distance to the goal */ 
+    /* custom functor to compare two nodes based on their estimated distance to the goal */ 
     struct compareFx {
-        bool operator () (const Node& a, const Node& b) {
-            return a.getF() > b.getF();
+        bool operator () (const Node* a, const Node* b) {
+            return (*a).getF() > (*b).getF();
+        }
+    };
+
+    /* custom functor to compare node coords */
+    struct NodeCmp
+    {
+        bool operator() (const Node* n1, const Node* n2)
+        {
+            return (*n1).getX() < (*n2).getX() || (*n1).getY() < (*n2).getY();
         }
     };
 
     // priority queue, sorted desc by heuristic, of nodes to traverse
-    // TODO: MAKE NODE *s
-    priority_queue <Node, vector<Node>, compareFx > OPEN;
+    priority_queue <Node*, vector<Node*>, compareFx> OPEN;
     // set of coords previously opened nodes
-    // TODO: CHANGE BACK TO NODE *S (special compare nodes)
-    set< tuple<int, int>>CLOSED;
+    set<Node*, NodeCmp>CLOSED;
 
     // TODO: give the nodes its heuristic values,
     // add the starting point to the queue, 
@@ -146,44 +155,56 @@ static void planner(
 
     // if we have not yet put in all of the moves, insert start into the queue and update the moves
     if (moves.empty()) {
-        // TODO: use push front to incrementally insert the newest move at the front of the vector of moves
+        // are you at the end point? if so then stay put
+        if(robotposeX == goalposeX && robotposeY == goalposeY) {
+            return;
+        }
+        // backtrack starter: the node at the end point
+        Node* end = NULL;
         // basically here is where we run A* to populate moves :)
         // insert start into OPEN
         double init_h = (double)sqrt(((robotposeX-goalposeX)*(robotposeX-goalposeX) + (robotposeY-goalposeY)*(robotposeY-goalposeY)));
-        Node* start = new Node (robotposeX, robotposeY, 0, init_h);
-        tuple<int, int> final_coords = make_tuple(goalposeX, goalposeY);
-        OPEN.push(*start);
+        // initialize start node with start position, 0 cost, heuristic of euclidean dist to goal, no parent
+        Node* start = new Node (robotposeX, robotposeY, 0, init_h, NULL);
+        OPEN.push(start);
         // while (you haven't opened the final position and OPEN is not empty):
-        while (!OPEN.empty() && CLOSED.find(final_coords) != CLOSED.end()) {
+        while (!OPEN.empty()) {
             // pop from OPEN; insert coords into CLOSED
-            // TODO: change to *
-            Node next_to_search = OPEN.top();
-            // TODO: if the node is at the end then break
+            Node* next_to_search = OPEN.top();
             OPEN.pop();
-            CLOSED.insert(make_tuple(next_to_search.getX(), next_to_search.getY()));
+            // if the node is at the end then break (remove the closed.find call)
+            if((*next_to_search).getX() == goalposeX && (*next_to_search).getY() == goalposeY) {
+                end = next_to_search;
+                break;
+            }
+            CLOSED.insert(next_to_search);
             // TODO: search all neighbors, update g values, and insert them into OPEN
             for (int dir = 0; dir < NUMOFDIRS; dir++)
             {
                 int newx = robotposeX + dX[dir];
                 int newy = robotposeY + dY[dir];
-                // do math if in-bounds
+                // if in bounds, do math
                 if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size) {
-                    // also if not in closed
-                    if (CLOSED.find(make_tuple(newx, newy)) == CLOSED.end()) {
-                        //if g(s') > g(s) + c(s,s')
-                        //g(s') = g(s) + c(s,s');
-                        // insert s' into OPEN;
-                        double new_g = next_to_search.getG();
-                        double new_dist = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
-                        Node * s_prime = new Node(newx, newy, new_g + 1, new_dist);
-                        OPEN.push(*s_prime);
+                    //if g(s') > g(s) + c(s,s')
+                    //g(s') = g(s) + c(s,s');
+                    double new_g = (*next_to_search).getG() + 1;
+                    double new_dist = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
+                    Node* s_prime = new Node(newx, newy, new_g, new_dist, next_to_search);
+                    // also if not in closed insert s' into OPEN;
+                    if (CLOSED.find(s_prime) == CLOSED.end()) {
+                        OPEN.push(s_prime);
                     }
                 }
-                // TODO: use this algo to actually return a path
-                // eg populate moves
-                // using backtracking
             }   
         }
+        // TODO: use this algo to actually return a path
+        // eg populate moves
+        // using backtracking
+        // use push front to incrementally insert the newest move at the front of the vector of moves
+        for(Node* backtrack = (*end).getParent(); backtrack != NULL; backtrack = (*backtrack).getParent()) {
+            moves.push_back(make_tuple((*backtrack).getX(), (*backtrack).getY()));
+        }
+        return;
     }
     // otherwise, just return the next move and pop
     else {
@@ -200,35 +221,35 @@ static void planner(
 
     /* OUTDATED CODE BELOW: GREEDY/NAIVE SOLUTION */
 
-    int bestX = 0, bestY = 0; // robot will not move if greedy action leads to collision
-    double olddisttotarget = (double)sqrt(((robotposeX-goalposeX)*(robotposeX-goalposeX) + (robotposeY-goalposeY)*(robotposeY-goalposeY)));
-    double disttotarget;
-    for(int dir = 0; dir < NUMOFDIRS; dir++)
-    {
-        int newx = robotposeX + dX[dir];
-        int newy = robotposeY + dY[dir];
+    // int bestX = 0, bestY = 0; // robot will not move if greedy action leads to collision
+    // double olddisttotarget = (double)sqrt(((robotposeX-goalposeX)*(robotposeX-goalposeX) + (robotposeY-goalposeY)*(robotposeY-goalposeY)));
+    // double disttotarget;
+    // for(int dir = 0; dir < NUMOFDIRS; dir++)
+    // {
+    //     int newx = robotposeX + dX[dir];
+    //     int newy = robotposeY + dY[dir];
 
-        if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
-        {
-            if (((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && ((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
-            {
-                disttotarget = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
-                if(disttotarget < olddisttotarget)
-                {
-                    olddisttotarget = disttotarget;
-                    bestX = dX[dir];
-                    bestY = dY[dir];
-                }
-            }
-        }
-    }
+    //     if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
+    //     {
+    //         if (((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && ((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
+    //         {
+    //             disttotarget = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
+    //             if(disttotarget < olddisttotarget)
+    //             {
+    //                 olddisttotarget = disttotarget;
+    //                 bestX = dX[dir];
+    //                 bestY = dY[dir];
+    //             }
+    //         }
+    //     }
+    // }
 
-    robotposeX = robotposeX + bestX;
-    robotposeY = robotposeY + bestY;
-    action_ptr[0] = robotposeX;
-    action_ptr[1] = robotposeY;
+    // robotposeX = robotposeX + bestX;
+    // robotposeY = robotposeY + bestY;
+    // action_ptr[0] = robotposeX;
+    // action_ptr[1] = robotposeY;
     
-    return;
+    // return;
 }
 
 // prhs contains input parameters (4):
