@@ -98,18 +98,12 @@ static void planner(
             int getX () const {return x;}
             int getY () const {return y;}
             Node* getParent() const {return parent;}
-
-            /* UTILITY FUNCTIONS */
-
-            bool cmpNode (Node a, Node b) {
-                return a.x == b.x && a.y == b.y;
-            }
     };
 
     /* custom functor to compare two nodes based on their estimated distance to the goal */ 
     struct compareFx {
         bool operator () (const Node* a, const Node* b) {
-            return (*a).getF() > (*b).getF();
+            return a->getF() > b->getF();
         }
     };
 
@@ -118,7 +112,11 @@ static void planner(
     {
         bool operator() (const Node* n1, const Node* n2)
         {
-            return (*n1).getX() < (*n2).getX() || (*n1).getY() < (*n2).getY();
+            // return n1->getX() < n2->getX() || n1->getY() < n2->getY();
+            if (n1->getX() == n2->getX()) {
+                return n1->getY() < n2->getY();
+            }
+            return n1->getX() < n2->getX();
         }
     };
 
@@ -159,6 +157,8 @@ static void planner(
         int count = 0;
         // are you at the end point? if so then stay put
         if(robotposeX == goalposeX && robotposeY == goalposeY) {
+            action_ptr[0] = robotposeX;
+            action_ptr[1] = robotposeY;
             return;
         }
         // backtrack starter: the node at the end point
@@ -170,36 +170,51 @@ static void planner(
         Node* start = new Node (robotposeX, robotposeY, 0, init_h, NULL);
         OPEN.push(start);
         // while (you haven't opened the final position and OPEN is not empty):
-        while (!OPEN.empty() && count < 1000000) {
+        while (!OPEN.empty() && count < 10000000) {
             // pop from OPEN; insert coords into CLOSED
             Node* next_to_search = OPEN.top();
+            // goal coords for map 4 are 123 247
+            // cout << (*next_to_search).getX() << " " << (*next_to_search).getY() << "\n";
             OPEN.pop();
             // if the node is at the end then break (remove the closed.find call)
-            if((*next_to_search).getX() == goalposeX && (*next_to_search).getY() == goalposeY) {
+            if(next_to_search->getX() == goalposeX && next_to_search->getY() == goalposeY) {
                 end = next_to_search;
                 break;
             }
+            // assert(CLOSED.find(next_to_search) == CLOSED.end());
+            if (CLOSED.find(next_to_search) != CLOSED.end()) {
+                cout << "found duplicate\n";
+                continue;
+            }
             CLOSED.insert(next_to_search);
+            cout << next_to_search->getX() << " " << next_to_search->getY() << "in closed\n";
             // TODO: search all neighbors, update g values, and insert them into OPEN
             for (int dir = 0; dir < NUMOFDIRS; dir++)
             {
-                int newx = (*next_to_search).getX() + dX[dir];
-                int newy = (*next_to_search).getY() + dY[dir];
+                int newx = next_to_search->getX() + dX[dir];
+                int newy = next_to_search->getY() + dY[dir];
                 // if in bounds, do math
                 if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size) {
                     // if free, do more math
                     // TODO: make not broken >:(
-                    if (((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && ((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh)) 
+                    if ( ((int)map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh)) 
                         {
                         //if g(s') > g(s) + c(s,s')
                         //g(s') = g(s) + c(s,s');
-                        double new_g = (*next_to_search).getG() + 1;
+                        double new_g = next_to_search->getG() + 1;
                         double new_dist = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
                         Node* s_prime = new Node(newx, newy, new_g, new_dist, next_to_search);
                         // also if not in closed insert s' into OPEN;
                         if (CLOSED.find(s_prime) == CLOSED.end()) {
+                            // cout << (*s_prime).getX() << " " << (*s_prime).getY() << "\n";
                             OPEN.push(s_prime);
                         }
+                        else {
+                            cout << "found duplicatept2\n";
+                        }
+                    }
+                    else {
+                        cout << "hit a boundary\n";
                     }
                 }
                 count ++;   
@@ -209,8 +224,8 @@ static void planner(
         // eg populate moves
         // using backtracking
         // use push front to incrementally insert the newest move at the front of the vector of moves
-        for(Node* backtrack = end; backtrack != NULL; backtrack = (*backtrack).getParent()) {
-            moves.push_back(make_tuple((*backtrack).getX(), (*backtrack).getY()));
+        for(Node* backtrack = end; backtrack != NULL; backtrack = backtrack->getParent()) {
+            moves.push_back(make_tuple(backtrack->getX(), backtrack->getY()));
         }
         action_ptr[0] = robotposeX;
         action_ptr[1] = robotposeY;
